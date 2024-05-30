@@ -221,6 +221,144 @@ bool mata::nfa::algorithms::is_included_antichains(
     return true;
 } // }}}
 
+/// language inclusion check using Antichains that determinizes both automatons
+bool mata::nfa::algorithms::is_included_antichains_2(
+    const Nfa&             smaller,
+    const Nfa&             bigger,
+    const Alphabet* const  alphabet, //TODO: this parameter is not used
+    Run*                   cex)
+{ // {{{
+    (void)alphabet;
+
+    using ProdStateType = std::tuple<StateSet, StateSet>;
+    using ProdStatesType = std::vector<ProdStateType>;
+    using ProcessedType = ProdStatesType;
+
+    auto subsumes = [](const ProdStateType& lhs, const ProdStateType& rhs) {
+        const StateSet& lhs_smaller = std::get<0>(lhs);
+        const StateSet& rhs_smaller = std::get<0>(rhs);
+
+        if (!rhs_smaller.IsSubsetOf(lhs_smaller)) {
+            return false;
+        }
+
+        const StateSet& lhs_bigger = std::get<1>(lhs);
+        const StateSet& rhs_bigger = std::get<1>(rhs);
+
+        return lhs_bigger.IsSubsetOf(rhs_bigger);
+    };
+
+
+    ProdStatesType worklist{};
+    ProcessedType processed(smaller.num_of_states()); 
+
+    std::vector<State> distances_smaller = revert(smaller).distances_from_initial();
+    std::vector<State> distances_bigger = revert(bigger).distances_from_initial();
+
+   // auto min_dst = [&](const StateSet& set) {
+   //      if (set.empty()) return Limits::max_state;
+   //      return distances_bigger[*std::min_element(set.begin(), set.end(), [&](const State a,const State b){return distances_bigger[a] < distances_bigger[b];})];
+   //  };
+
+    auto insert_to_pairs = [&](ProdStatesType & pairs,const ProdStateType & pair) {
+        pairs.push_back(pair);
+    };
+
+    // 'paths[s] == t' denotes that state 's' was accessed from state 't',
+    // 'paths[s] == s' means that 's' is an initial state
+    std::map<ProdStateType, std::pair<ProdStateType, Symbol>> paths;
+
+    if (
+        !are_disjoint(smaller.initial, smaller.final) &&
+        are_disjoint(bigger.initial, bigger.final)
+    ) {
+        if (cex != nullptr) { cex->word.clear(); }
+        return false;
+    } else {
+        StateSet smaller_state_set { smaller.initial };
+        StateSet bigger_state_set{ bigger.initial };
+
+        const ProdStateType state = std::tuple(
+            smaller_state_set, 
+            bigger_state_set
+            // min_dst(smaller_state_set),
+            // min_dst(bigger_state_set)    
+        );
+
+        insert_to_pairs(worklist, state);
+        insert_to_pairs(processed, state);
+    }
+
+    mata::utils::OrdVector<Symbol> alph_symbols = alphabet->get_alphabet_symbols();
+
+    // We use DFS strategy for the worklist processing
+    while (!worklist.empty()) {
+        // get a next product state
+        ProdStateType prod_state = *worklist.rbegin();
+        worklist.pop_back();
+
+        const StateSet& smaller_set = std::get<0>(prod_state);
+        const StateSet& bigger_set = std::get<1>(prod_state);
+
+        for (Symbol symb : alph_symbols) {
+            StateSet smaller_succ = smaller.post(smaller_set, symb);
+            StateSet bigger_succ = bigger.post(bigger_set, symb);
+
+            ProdStateType succ = std::tuple(
+                smaller_succ,
+                bigger_succ
+                // min_dst(smaller_succ),
+                // min_dst(bigger_succ)
+            );
+
+            if (
+                smaller.final.intersects_with(smaller_succ) &&
+                !bigger.final.intersects_with(bigger_succ)
+            ) {
+                if (cex != nullptr) {
+                    cex->word.clear();
+                    cex->word.push_back(symb);
+
+                    ProdStateType trav = prod_state;
+
+                    while (paths[trav].first != trav) {
+                        cex->word.push_back(paths[trav].second);
+                        trav = paths[trav].first;
+                    }
+
+                    std::reverse(cex->word.begin(), cex->word.end());
+                }
+
+                return false;
+            }
+
+            bool is_subsumed = false;
+
+            for (const auto& anti_state : processed) {
+                if (subsumes(anti_state, succ)) {
+                    is_subsumed = true;
+                    break;
+                }
+            }
+
+            if (is_subsumed) {
+                continue;
+            }
+
+            for (ProdStatesType* ds: {&processed, &worklist}) {
+                std::erase_if(*ds, [&](const auto& d){ return subsumes(succ, d); });
+                insert_to_pairs(*ds, succ);
+            }
+            
+            if(cex != nullptr) {
+                paths[succ] = {prod_state, symb};
+            }
+        }
+    }
+
+    return true;
+} // }}}
+
 namespace {
     using AlgoType = decltype(algorithms::is_included_naive)*;
 

@@ -69,6 +69,17 @@ bool is_included_naive(const Nfa& smaller, const Nfa& bigger, const Alphabet* al
 bool is_included_antichains(const Nfa& smaller, const Nfa& bigger, const Alphabet*  alphabet = nullptr, Run* cex = nullptr);
 
 /**
+ * Inclusion implemented by antichain algorithms.
+ * @param[in] smaller Automaton which language should be included in the bigger one
+ * @param[in] bigger Automaton which language should include the smaller one
+ * @param[in] alphabet Alphabet of both automata (not needed for antichain algorithm)
+ * @param[out] cex A potential counterexample word which breaks inclusion
+ * @return True if smaller language is included,
+ * i.e., if the final intersection of smaller complement of bigger is empty.
+ */
+bool is_included_antichains_2(const Nfa& smaller, const Nfa& bigger, const Alphabet*  alphabet = nullptr, Run* cex = nullptr);
+
+/**
  * Universality check implemented by checking emptiness of complemented automaton
  * @param[in] aut Automaton which universality is checked
  * @param[in] alphabet Alphabet of the automaton
